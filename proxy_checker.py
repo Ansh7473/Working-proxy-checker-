@@ -6,6 +6,17 @@ import multiprocessing
 from urllib.parse import urlparse
 import time
 import os
+import sys
+import subprocess
+
+def install_dependencies():
+    """Install required dependencies from requirements.txt"""
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"])
+        print("Dependencies installed successfully")
+    except subprocess.CalledProcessError:
+        print("Error installing dependencies. Please run 'pip install -r requirements.txt' manually")
+        sys.exit(1)
 
 def parse_proxy(proxy_line):
     """Parse different proxy formats and return connection details"""
@@ -13,7 +24,6 @@ def parse_proxy(proxy_line):
     if not proxy_line:
         return None
     
-    # Handle user:pass@ip:port format first
     if '@' in proxy_line and '://' not in proxy_line:
         try:
             auth, host_port = proxy_line.split('@')
@@ -29,12 +39,10 @@ def parse_proxy(proxy_line):
         except (ValueError, IndexError):
             pass
     
-    # Split by both : and / delimiters for other formats
     parts = proxy_line.replace('://', ':').replace('/', ':').split(':')
     
-    # Handle different proxy formats
     try:
-        if len(parts) == 2:  # ip:port
+        if len(parts) == 2:
             return {
                 'host': parts[0],
                 'port': int(parts[1]),
@@ -42,7 +50,7 @@ def parse_proxy(proxy_line):
                 'username': None,
                 'password': None
             }
-        elif len(parts) == 3:  # protocol:ip:port
+        elif len(parts) == 3:
             return {
                 'host': parts[1],
                 'port': int(parts[2]),
@@ -50,7 +58,7 @@ def parse_proxy(proxy_line):
                 'username': None,
                 'password': None
             }
-        elif len(parts) == 4:  # ip:port:username:password
+        elif len(parts) == 4:
             return {
                 'host': parts[0],
                 'port': int(parts[1]),
@@ -58,8 +66,8 @@ def parse_proxy(proxy_line):
                 'username': parts[2],
                 'password': parts[3]
             }
-        elif len(parts) == 5:  # protocol:ip:port:username:password or protocol:user:password:ip:port
-            if parts[1] in ['user', 'username']:  # http:user:password:ip:port format
+        elif len(parts) == 5:
+            if parts[1] in ['user', 'username']:
                 return {
                     'host': parts[3],
                     'port': int(parts[4]),
@@ -67,7 +75,7 @@ def parse_proxy(proxy_line):
                     'username': parts[1],
                     'password': parts[2]
                 }
-            return {  # protocol:ip:port:username:password
+            return {
                 'host': parts[1],
                 'port': int(parts[2]),
                 'type': parts[0].lower(),
@@ -88,7 +96,6 @@ def check_proxy(proxy_info):
     
     try:
         if proxy_info['type'] in ['socks4', 'socks5']:
-            # Set up SOCKS proxy
             socks.set_default_proxy(
                 socks.SOCKS5 if proxy_info['type'] == 'socks5' else socks.SOCKS4,
                 proxy_info['host'],
@@ -99,7 +106,6 @@ def check_proxy(proxy_info):
             socket.socket = socks.socksocket
             response = requests.get(test_url, timeout=timeout)
         else:
-            # HTTP/HTTPS proxy
             proxies = {
                 'http': f"{proxy_info['type']}://{proxy_info['host']}:{proxy_info['port']}",
                 'https': f"{proxy_info['type']}://{proxy_info['host']}:{proxy_info['port']}"
@@ -107,18 +113,13 @@ def check_proxy(proxy_info):
             if proxy_info['username'] and proxy_info['password']:
                 proxies['http'] = f"{proxy_info['type']}://{proxy_info['username']}:{proxy_info['password']}@{proxy_info['host']}:{proxy_info['port']}"
                 proxies['https'] = f"{proxy_info['type']}://{proxy_info['username']}:{proxy_info['password']}@{proxy_info['host']}:{proxy_info['port']}"
-            
             response = requests.get(test_url, proxies=proxies, timeout=timeout)
-        
         if response.status_code == 200:
-            # Reconstruct proxy string
             if proxy_info['username'] and proxy_info['password']:
                 return f"{proxy_info['type']}://{proxy_info['username']}:{proxy_info['password']}@{proxy_info['host']}:{proxy_info['port']}"
             return f"{proxy_info['type']}://{proxy_info['host']}:{proxy_info['port']}"
-        
     except Exception:
         return None
-    
     return None
 
 def process_proxy_batch(proxy_batch):
@@ -128,7 +129,21 @@ def process_proxy_batch(proxy_batch):
     return [r for r in results if r is not None]
 
 def main():
-    # Create proxies.txt if it doesn't exist
+    # Check for --install flag or missing dependencies
+    if '--install' in sys.argv or not os.path.exists('requirements.txt'):
+        if not os.path.exists('requirements.txt'):
+            with open('requirements.txt', 'w') as f:
+                f.write("requests\npysocks")
+        install_dependencies()
+
+    # Import check after potential installation
+    try:
+        import requests
+        import socks
+    except ImportError:
+        print("Required packages not found. Attempting to install...")
+        install_dependencies()
+
     if not os.path.exists('proxies.txt'):
         print("proxies.txt not found, creating one with example proxies...")
         with open('proxies.txt', 'w') as f:
@@ -141,11 +156,9 @@ def main():
             f.write("https://192.168.1.1:443:user:pass\n")
             f.write("http/user/pass/192.168.1.1/8080\n")
 
-    # Read proxies from file
     with open('proxies.txt', 'r') as f:
         proxy_lines = f.readlines()
 
-    # Parse all proxies
     proxy_info_list = [parse_proxy(line) for line in proxy_lines]
     proxy_info_list = [p for p in proxy_info_list if p is not None]
 
@@ -154,14 +167,12 @@ def main():
         print("Please add your own proxies to proxies.txt and run again")
         return
 
-    # Split into batches for multiprocessing
     cpu_count = multiprocessing.cpu_count()
     batch_size = max(1, len(proxy_info_list) // (cpu_count * 2))
     batches = [proxy_info_list[i:i + batch_size] for i in range(0, len(proxy_info_list), batch_size)]
 
     print(f"Checking {len(proxy_info_list)} proxies using {len(batches)} batches...")
 
-    # Process batches in parallel
     start_time = time.time()
     working_proxies = []
     
@@ -170,7 +181,6 @@ def main():
         for batch_result in results:
             working_proxies.extend(batch_result)
 
-    # Create and save working_proxies.txt
     if working_proxies:
         print("Creating working_proxies.txt with working proxies...")
         with open('working_proxies.txt', 'w') as f:
