@@ -23,7 +23,7 @@ http/user/pass/192.168.1.1/8080
 ## Installation
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/proxy-checker.git
+git clone https://github.com/Ansh7473/proxy-checker.git
 cd proxy-checker
 
 
