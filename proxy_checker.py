@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 import multiprocessing
 from urllib.parse import urlparse
 import time
+import os
 
 def parse_proxy(proxy_line):
     """Parse different proxy formats and return connection details"""
@@ -127,20 +128,30 @@ def process_proxy_batch(proxy_batch):
     return [r for r in results if r is not None]
 
 def main():
+    # Create proxies.txt if it doesn't exist
+    if not os.path.exists('proxies.txt'):
+        print("proxies.txt not found, creating one with example proxies...")
+        with open('proxies.txt', 'w') as f:
+            f.write("# Example proxy formats - replace with your own proxies\n")
+            f.write("user:pass@192.168.1.1:8080\n")
+            f.write("192.168.1.1:8080\n")
+            f.write("http://192.168.1.1:8080\n")
+            f.write("socks5://192.168.1.1:1080\n")
+            f.write("192.168.1.1:8080:user:pass\n")
+            f.write("https://192.168.1.1:443:user:pass\n")
+            f.write("http/user/pass/192.168.1.1/8080\n")
+
     # Read proxies from file
-    try:
-        with open('proxies.txt', 'r') as f:
-            proxy_lines = f.readlines()
-    except FileNotFoundError:
-        print("Error: proxies.txt not found")
-        return
+    with open('proxies.txt', 'r') as f:
+        proxy_lines = f.readlines()
 
     # Parse all proxies
     proxy_info_list = [parse_proxy(line) for line in proxy_lines]
     proxy_info_list = [p for p in proxy_info_list if p is not None]
 
     if not proxy_info_list:
-        print("No valid proxies found in the file")
+        print("No valid proxies found in proxies.txt")
+        print("Please add your own proxies to proxies.txt and run again")
         return
 
     # Split into batches for multiprocessing
@@ -159,10 +170,16 @@ def main():
         for batch_result in results:
             working_proxies.extend(batch_result)
 
-    # Save working proxies
-    with open('working_proxies.txt', 'w') as f:
-        for proxy in working_proxies:
-            f.write(f"{proxy}\n")
+    # Create and save working_proxies.txt
+    if working_proxies:
+        print("Creating working_proxies.txt with working proxies...")
+        with open('working_proxies.txt', 'w') as f:
+            for proxy in working_proxies:
+                f.write(f"{proxy}\n")
+    else:
+        print("No working proxies found, creating empty working_proxies.txt...")
+        with open('working_proxies.txt', 'w') as f:
+            f.write("# No working proxies found\n")
 
     end_time = time.time()
     print(f"Found {len(working_proxies)} working proxies")
