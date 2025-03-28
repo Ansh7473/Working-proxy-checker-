@@ -23,38 +23,21 @@ def parse_proxy(proxy_line):
     proxy_line = proxy_line.strip()
     if not proxy_line:
         return None
-    
-    if '@' in proxy_line and '://' not in proxy_line:
-        try:
-            auth, host_port = proxy_line.split('@')
-            username, password = auth.split(':')
-            host, port = host_port.split(':')
-            return {
-                'host': host,
-                'port': int(port),
-                'type': 'http',
-                'username': username,
-                'password': password
-            }
-        except (ValueError, IndexError):
-            pass
-    
-    parts = proxy_line.replace('://', ':').replace('/', ':').split(':')
-    
-    try:
+
+    # Handle standard URL-like format (e.g., http://username:password@host:port)
+    if '://' in proxy_line:
+        result = urlparse(proxy_line)
+    # Handle username:password@host:port by adding default scheme
+    elif '@' in proxy_line:
+        result = urlparse('http://' + proxy_line)
+    # Handle formats without scheme or auth (e.g., host:port, host:port:username:password)
+    else:
+        parts = proxy_line.split(':')
         if len(parts) == 2:
             return {
                 'host': parts[0],
                 'port': int(parts[1]),
                 'type': 'http',
-                'username': None,
-                'password': None
-            }
-        elif len(parts) == 3:
-            return {
-                'host': parts[1],
-                'port': int(parts[2]),
-                'type': parts[0].lower(),
                 'username': None,
                 'password': None
             }
@@ -66,25 +49,32 @@ def parse_proxy(proxy_line):
                 'username': parts[2],
                 'password': parts[3]
             }
-        elif len(parts) == 5:
-            if parts[1] in ['user', 'username']:
-                return {
-                    'host': parts[3],
-                    'port': int(parts[4]),
-                    'type': parts[0].lower(),
-                    'username': parts[1],
-                    'password': parts[2]
-                }
-            return {
-                'host': parts[1],
-                'port': int(parts[2]),
-                'type': parts[0].lower(),
-                'username': parts[3],
-                'password': parts[4]
-            }
-    except (ValueError, IndexError):
+        else:
+            return None
+
+    # Extract details from urlparse result
+    host = result.hostname
+    port = result.port
+    type = result.scheme if result.scheme else 'http'
+    username = result.username
+    password = result.password
+
+    # Validate required fields
+    if not host or not port:
         return None
-    return None
+
+    try:
+        port = int(port)
+    except (ValueError, TypeError):
+        return None
+
+    return {
+        'host': host,
+        'port': port,
+        'type': type,
+        'username': username,
+        'password': password
+    }
 
 def check_proxy(proxy_info):
     """Check if a single proxy is working"""
@@ -154,7 +144,7 @@ def main():
             f.write("socks5://192.168.1.1:1080\n")
             f.write("192.168.1.1:8080:user:pass\n")
             f.write("https://192.168.1.1:443:user:pass\n")
-            f.write("http/user/pass/192.168.1.1/8080\n")
+            f.write("http://wfmlbfgy:or54xe5i15dt@38.154.227.167:5868\n")
 
     with open('proxies.txt', 'r') as f:
         proxy_lines = f.readlines()
