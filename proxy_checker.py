@@ -27,13 +27,23 @@ def parse_proxy(proxy_line):
     # Handle standard URL-like format (e.g., http://username:password@host:port)
     if '://' in proxy_line:
         result = urlparse(proxy_line)
+        host = result.hostname
+        port = result.port
+        type = result.scheme if result.scheme else 'http'
+        username = result.username
+        password = result.password
     # Handle username:password@host:port by adding default scheme
-    elif '@' in proxy_line:
+    elif '@' in proxy_line and '://' not in proxy_line:
         result = urlparse('http://' + proxy_line)
-    # Handle formats without scheme or auth (e.g., host:port, host:port:username:password)
+        host = result.hostname
+        port = result.port
+        type = 'http'
+        username = result.username
+        password = result.password
+    # Handle formats without scheme (e.g., host:port, host:port:username:password)
     else:
         parts = proxy_line.split(':')
-        if len(parts) == 2:
+        if len(parts) == 2:  # host:port
             return {
                 'host': parts[0],
                 'port': int(parts[1]),
@@ -41,7 +51,7 @@ def parse_proxy(proxy_line):
                 'username': None,
                 'password': None
             }
-        elif len(parts) == 4:
+        elif len(parts) == 4:  # host:port:username:password
             return {
                 'host': parts[0],
                 'port': int(parts[1]),
@@ -51,13 +61,6 @@ def parse_proxy(proxy_line):
             }
         else:
             return None
-
-    # Extract details from urlparse result
-    host = result.hostname
-    port = result.port
-    type = result.scheme if result.scheme else 'http'
-    username = result.username
-    password = result.password
 
     # Validate required fields
     if not host or not port:
@@ -142,7 +145,7 @@ def main():
             f.write("192.168.1.1:8080\n")
             f.write("http://192.168.1.1:8080\n")
             f.write("socks5://192.168.1.1:1080\n")
-            f.write("192.168.1.1:8080:user:pass\n")
+            f.write("185.199.228.220:7300:qtnqianv:wzm29ynj809f\n")
             f.write("https://192.168.1.1:443:user:pass\n")
             f.write("http://wfmlbfgy:or54xe5i15dt@38.154.227.167:5868\n")
 
@@ -157,16 +160,18 @@ def main():
         print("Please add your own proxies to proxies.txt and run again")
         return
 
-    cpu_count = multiprocessing.cpu_count()
-    batch_size = max(1, len(proxy_info_list) // (cpu_count * 2))
-    batches = [proxy_info_list[i:i + batch_size] for i in range(0, len(proxy_info_list), batch_size)]
+    # Use 1 batch for every 3 proxies
+    fixed_batch_size = 3
+    batches = [proxy_info_list[i:i + fixed_batch_size] for i in range(0, len(proxy_info_list), fixed_batch_size)]
 
     print(f"Checking {len(proxy_info_list)} proxies using {len(batches)} batches...")
 
     start_time = time.time()
     working_proxies = []
     
-    with multiprocessing.Pool(processes=cpu_count) as pool:
+    # Use multiprocessing to process batches, limiting processes to CPU cores or number of batches
+    cpu_count = multiprocessing.cpu_count()
+    with multiprocessing.Pool(processes=min(cpu_count, len(batches))) as pool:
         results = pool.map(process_proxy_batch, batches)
         for batch_result in results:
             working_proxies.extend(batch_result)
